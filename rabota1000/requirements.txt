@@ -5,3 +5,4 @@ re
 pandas
 requests
 csv
+lxml
