@@ -1,4 +1,4 @@
 dot_env
 beautifulsoup4
-re
 fake_useragent
+re
