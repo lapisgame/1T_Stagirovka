@@ -2,3 +2,5 @@ dot_env
 beautifulsoup4
 fake_useragent
 re
+pandas
+requests
