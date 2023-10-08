@@ -4,3 +4,4 @@ fake_useragent
 re
 pandas
 requests
+csv
