@@ -3,9 +3,6 @@ import lxml
 from lxml.etree import tostring as htmlstring
 import requests
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-
 from fake_useragent import FakeUserAgent
 
 from dotenv import dotenv_values
@@ -17,7 +14,10 @@ from datetime import date, timedelta
 import json
 import time
 
+import progressbar
+
 import pandas as pd
+
 
 
 # Подгрузка данных из файла окружения
@@ -27,19 +27,15 @@ config = dotenv_values(".env")
 # config['hh_api_name']
 # config['hh_api_Client_ID']
 # config['hh_api_Client_Secret']
-# config['hh_api_authorization_code']
-
-code = ''
 
 params = {
     'grant_type':'client_credentials',
     'client_id':config['hh_api_Client_ID'],
-    'client_secret':config['hh_api_Client_Secret'],
-    'code':code
+    'client_secret':config['hh_api_Client_Secret']
 }
 
 access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
-print(access_token)
+
 
 
 # Основные регулярные выражения для проекта
@@ -47,8 +43,10 @@ re_vacancy_id_hh = r'\/vacancy\/(\d+)\?'
 re_vacancy_id_rabota = r'\/vacancy\/(\d+)'
 re_vacancy_id_finder = r'\/vacancies\/(\d+)'
 re_vacancy_id_zarplata = r'\/vacancy\/card\/id(\d+)'
-
 # re.search(re_vacancy_id, string).group(1)
+
+re_html_tag_remove = r'<[^>]+>'
+# re.sub(re_html_tag_remove, replace, string)
 
 
 
@@ -73,9 +71,7 @@ class Rabota1000_Parser:
         ua = FakeUserAgent()
         headers = {'user-agent':ua.random}
 
-        self._pars()
-
-    def _pars(self):
+    def pars(self):
         if not os.path.exists('pars_link.csv'):
             with open('pars_link.csv', 'w', newline='', encoding='utf-8') as csv_file:
                 names = ['vac_name', 'link', 'source', 'vac_id']
@@ -108,34 +104,47 @@ class Rabota1000_Parser:
                     code = exc.response.status_code
                     print(code)
                 print()
+        if not os.path.exists('finaly.csv'):
+            links_for_processing = []
+            with open('pars_link.csv', 'r', encoding='utf-8') as csv_file:
+                reader = csv.reader(csv_file)
+                labels = next(reader, None)
+                for row in reader:
+                    links_for_processing.append(dict(zip(labels, row)))
 
-        links_for_processing = []
-        with open('pars_link.csv', 'r', encoding='utf-8') as csv_file:
-            reader = csv.reader(csv_file)
-            labels = next(reader, None)
-            for row in reader:
-                links_for_processing.append(dict(zip(labels, row)))
-        
-        for item in links_for_processing:
-            if item['source'] == 'hh.ru':
-                item['vac_id'] = re.search(re_vacancy_id_hh, item['link']).group(1)
-            elif item['source'] == 'finder.vc':
-                item['vac_id'] = re.search(re_vacancy_id_finder, item['link']).group(1)
-            elif item['source'] == 'zarplata.ru':
-                item['vac_id'] = re.search(re_vacancy_id_zarplata, item['link']).group(1)
-            else:
-                item['vac_id'] = re.search(re_vacancy_id_rabota, item['link']).group(1)
+            for item in links_for_processing:
+                if item['source'] == 'hh.ru':
+                    item['vac_id'] = re.search(re_vacancy_id_hh, item['link']).group(1)
+                elif item['source'] == 'finder.vc':
+                    item['vac_id'] = re.search(re_vacancy_id_finder, item['link']).group(1)
+                elif item['source'] == 'zarplata.ru':
+                    item['vac_id'] = re.search(re_vacancy_id_zarplata, item['link']).group(1)
+                else:
+                    item['vac_id'] = re.search(re_vacancy_id_rabota, item['link']).group(1)
 
-        
-        for link in links_for_processing:
-            if link['source'] == 'hh.ru':
-                self.pre_resualt.append(self._pars_url_hh(link['vac_id']))
-            elif link['source'] == 'zarplata.ru':
-                self.pre_resualt.append(self._pars_url_zarplata(link['vac_id']))
-            elif link['source'] == 'finder.vc':
-                self.pre_resualt.append(self._pars_url_finder(link['vac_id']))
-            else:
-                self.pre_resualt.append(self._pars_url_other(link['vac_id']))
+            
+            bar = progressbar.ProgressBar(maxval=len(links_for_processing)).start()
+            k = 0
+            for link in links_for_processing:
+                if link['source'] == 'hh.ru':
+                    self.pre_resualt.append(self._pars_url_hh(link['vac_id']))
+                elif link['source'] == 'zarplata.ru':
+                    self.pre_resualt.append(self._pars_url_zarplata(link['vac_id']))
+                elif link['source'] == 'finder.vc':
+                    self.pre_resualt.append(self._pars_url_finder(link['vac_id']))
+                else:
+                    self.pre_resualt.append(self._pars_url_other(link['vac_id']))
+                k += 1
+                bar.update(k)
+            
+            self._save_frame_to_csv()
+        else:
+            with open('finaly.csv', 'r', encoding='utf-8') as csv_file:
+                reader = csv.reader(csv_file)
+                labels = next(reader, None)
+                for row in reader:
+                    self.pre_resualt.append(dict(zip(labels, row)))
+
 
     def get_vac_name_into_file(self, vac_file_path:str)->list:
         vac_name_list = []
@@ -145,45 +154,57 @@ class Rabota1000_Parser:
         return vac_name_list
 
     def _pars_url_hh(self, id:str)->dict:
-        print(f'https://api.hh.ru/vacancies/{id}')
         res = {}
-        data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
-        res['vac_link'] = f'https://hh.ru/vacancy/{id}'                 # Ссылка
-        res['name'] = data['name']                                      # Название
-        res['city'] = data['area']['name']                              # Город
-        res['company'] = data['employer']['name']                       # Назвнание компании публикующей вакансию
-        res['experience'] = data['experience']['name']                  # Опыт работы (нет замены на jun mid и sin)
-        res['schedule'] = data['schedule']['name']                      # Тип работы (офис/удаленка и тд)
-        res['employment'] = data['employment']['name']                  # График работы
-        res['skills'] = [item['name'] for item in data['key_skills']]   # Ключевые навыки
-        res['description'] = data['description']                        # Полное описание (html теги не убраны)
-        if data['salary'] == None: 
-            res['salary'] = 'Договорная'                                # Если ЗП не указано то пишем договорная
-        else:
-            res['salary'] = data['salary']                              # Если есть то берем как есть
-        res['time'] = data['published_at']                              # Дата и время публикации
+        try:
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            res['vac_link'] = f'https://hh.ru/vacancy/{id}'                             # Ссылка
+            res['name'] = data['name']                                                  # Название
+            res['city'] = data['area']['name']                                          # Город
+            res['company'] = data['employer']['name']                                   # Назвнание компании публикующей вакансию
+            res['experience'] = data['experience']['name']                              # Опыт работы (нет замены на jun mid и sin)
+            res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
+            res['employment'] = data['employment']['name']                              # График работы
+            res['skills'] = [item['name'] for item in data['key_skills']]               # Ключевые навыки
+            res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание (html теги не убраны)
+            if data['salary'] == None: 
+                res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
+            else:
+                res['salary'] = data['salary']                                          # Если есть то берем как есть
+            res['time'] = data['published_at']                                          # Дата и время публикации
+        except Exception as e:
+            print(f'Not Found {e}')
+            print(f'https://api.hh.ru/vacancies/{id}')
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            print(data)
 
         return res
 
 
     def _pars_url_zarplata(self, id:str)->dict:
         res = {}
-        data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
-        res['vac_link'] = f'https://www.zarplata.ru/vacancy/card/id{id}'# Ссылка
-        res['name'] = data['name']                                      # Название
-        res['city'] = data['area']['name']                              # Город
-        res['company'] = data['employer']['name']                       # Назвнание компании публикующей вакансию
-        res['experience'] = data['experience']['name']                  # Опыт работы (нет замены на jun mid и sin)
-        res['schedule'] = data['schedule']['name']                      # Тип работы (офис/удаленка и тд)
-        res['employment'] = data['employment']['name']                  # График работы
-        res['skills'] = [item['name'] for item in data['key_skills']]   # Ключевые навыки
-        res['description'] = data['description']                        # Полное описание (html теги не убраны)
-        if data['salary'] == None: 
-            res['salary'] = 'Договорная'                                # Если ЗП не указано то пишем договорная
-        else:
-            res['salary'] = data['salary']                              # Если есть то берем как есть
-        res['time'] = data['published_at']
-        
+        try:
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            res['vac_link'] = f'https://www.zarplata.ru/vacancy/card/id{id}'            # Ссылка
+            res['name'] = data['name']                                                  # Название
+            res['city'] = data['area']['name']                                          # Город
+            res['company'] = data['employer']['name']                                   # Назвнание компании публикующей вакансию
+            res['experience'] = data['experience']['name']                              # Опыт работы (нет замены на jun mid и sin)
+            res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
+            res['employment'] = data['employment']['name']                              # График работы
+            res['skills'] = [item['name'] for item in data['key_skills']]               # Ключевые навыки
+            res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание
+            if data['salary'] == None: 
+                res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
+            else:
+                res['salary'] = data['salary']                                          # Если есть то берем как есть
+            res['time'] = data['published_at']
+            
+        except Exception as e:
+            print(f'Not Found {e}')
+            print(f'https://api.zarplata.ru/vacancies/{id}')
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            print(data)
+
         return res
 
 
@@ -199,7 +220,7 @@ class Rabota1000_Parser:
         res['schedule'] = ''                                                                                                                                # Тип работы (офис/удаленка и тд) (НЕТ)
         res['employment'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[3]/ul/li[2]/span')[0].text                                      # График работы
         res['skills'] = ''                                                                                                                                  # Ключевые навыки
-        res['description'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[4]')[0].text                                                   # Полное описание (НЕТ)
+        res['description'] = re.sub(re_html_tag_remove, '', dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[4]')[0].text)                                                   # Полное описание (НЕТ)
         if len(dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[2]/span'))>0:
             res['salary'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[2]/span')[0].text.replace('\n', '').lstrip().rstrip()        # ЗП
         else:
@@ -231,12 +252,20 @@ class Rabota1000_Parser:
             res['time'] = str(date.today() - timedelta(days=int(re.search(r'Опубликована (\d+)', dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text).group(1))))
 
         return res
+    
+    def _save_frame_to_csv(self):
+        keys = self.pre_resualt[0].keys()
+
+        with open('finaly.csv', 'w', newline='', encoding='utf-8') as output_file:
+            dict_writer = csv.DictWriter(output_file, keys, delimiter = ",", lineterminator="\r")
+            dict_writer.writeheader()
+            dict_writer.writerows(self.pre_resualt)
 
     
 
 parser = Rabota1000_Parser()
+parser.pars()
 
 
-#! Сохранить в csv в PD и в базу
-for item in parser.pre_resualt:
-    print(item)
+df = pd.read_csv("finaly.csv")  
+df[['vac_link', 'name', 'city', 'company', 'experience', 'schedule', 'employment', 'skills', 'description', 'salary']] = df[['vac_link', 'name', 'city', 'company', 'experience', 'schedule', 'employment', 'skills', 'description', 'salary']].astype("string")
