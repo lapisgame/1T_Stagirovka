@@ -7,3 +7,4 @@ requests
 csv
 lxml
 progressbar
+psycopg2
