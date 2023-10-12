@@ -100,9 +100,8 @@ class Rabota1000_Parser:
                             writer = csv.writer(csv_file)
                             writer.writerows(links_to_save)
                             
-                except HTTPError as exc:
-                    code = exc.response.status_code
-                    print(code)
+                except Exception as e:
+                    print(e)
                 print()
         if not os.path.exists('finaly.csv'):
             links_for_processing = []
