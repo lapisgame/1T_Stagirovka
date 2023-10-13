@@ -1,8 +1,7 @@
 import aiohttp
 import asyncio
 
-import json
-import requests
+import re
 
 from dotenv import dotenv_values
 
@@ -35,31 +34,40 @@ params = {
     'client_secret':config['hh_api_Client_Secret']
 }
 
-access_token = 'APPLNM89ESGTSGNMVOVT3NKQN5LS5G89RJDVQ8DEBQ5DSIKQ1KPFTHSK6FS42NSR'
+access_token = 'APPLL4MRP3BV11JFBAF3SB6V3CUG9CBLNJ52H5DB0TKFJ13N08KJ0Q6I29PPPI9B'
 # access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
 print(access_token)
 
-count = 0
+# Основные регулярные выражения для проекта
+re_vacancy_id_hh = r'\/vacancy\/(\d+)\?'
+re_vacancy_id_rabota = r'\/vacancy\/(\d+)'
+re_vacancy_id_finder = r'\/vacancies\/(\d+)'
+re_vacancy_id_zarplata = r'\/vacancy\/card\/id(\d+)'
+# re.search(re_vacancy_id, string).group(1)
 
-async def fetch_vacancy_data(session, vacancy_id, ua):
+def get_vac_id_into_url(url:str)->dict:
+    if 'hh.ru' in url:
+        return {'source': 'hh', 'vac_id':re.search(re_vacancy_id_hh, url).group(1)}
+    elif 'finder.vc' in url:
+        return {'source': 'finder', 'vac_id':re.search(re_vacancy_id_finder, url).group(1)}
+    elif 'zarplata.ru' in url:
+        return {'source': 'zarpalta', 'vac_id':re.search(re_vacancy_id_zarplata, url).group(1)}
+    else:
+        return {'source': 'rabota', 'vac_id':re.search(re_vacancy_id_rabota, url).group(1)}
+
+async def fetch_vacancy_data(session, vacancy_id, ua)->dict:
     try:
-        global count
         url = f"{vacancy_id}"
         data = await session.get(url, headers = {'user-agent':ua, 'Authorization': f'Bearer {access_token}'})
         url = data.url
-        if 'captcha' in str(url):
-            count += 1
-        else:
-            return str(url)
-        return None
+
+        return get_vac_id_into_url(str(url))
 
     except Exception as e:
-        print(e)
+        url = data.url
+        return get_vac_id_into_url(str(url))
 
 async def main(links):
-    print('SLEEP')
-    time.sleep(2)
-    print('NO SLEEP')
     tasks = []
     
     async with aiohttp.ClientSession() as session:
@@ -233,10 +241,24 @@ links = [
     'https://rabota1000.ru/vacancy/70197392'
 ]
 
-for i in range(0, len(links), 30):
-    print(i, count)
-    res = asyncio.run(main(links[i:i+30]))
-    print(len(res))
+def iter_merge(list1, list2):
+    i, j = 0, 0
+    res = []
+    while i < len(list1) and j < len(list2):
+        res.append(list1[i])
+        i += 1
+        res.append(list2[j])
+        j += 1
+    res += list1[i:]
+    res += list2[j:] 
+    return res
 
-print(res)
-print(count)
+res = []
+
+step = 20
+for i in range(0, len(links), step):
+    res += asyncio.run(main(links[i:i+step]))
+
+merge = []
+for item in res:
+    merge = iter_merge(merge, item)
