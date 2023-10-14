@@ -2,13 +2,21 @@ import aiohttp
 import asyncio
 
 import re
+import json
+
+import requests
+from bs4 import BeautifulSoup
+import lxml
+
+import progressbar
 
 from dotenv import dotenv_values
 
 from fake_useragent import FakeUserAgent
 
-import time
+from datetime import date, timedelta
 
+import pandas as pd
 
 
 # Подгрузка данных из файла окружения
@@ -25,7 +33,7 @@ params = {
     'client_secret':config['hh_api_Client_Secret']
 }
 
-access_token = 'APPLL4MRP3BV11JFBAF3SB6V3CUG9CBLNJ52H5DB0TKFJ13N08KJ0Q6I29PPPI9B'
+access_token = 'APPLH836NFLKO3S6DQS3KRRNFDK46FPUREMG79PB918MHNL43M1H3L6631PGEIMO'
 # access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
 print(access_token)
 
@@ -36,14 +44,22 @@ re_vacancy_id_finder = r'\/vacancies\/(\d+)'
 re_vacancy_id_zarplata = r'\/vacancy\/card\/id(\d+)'
 # re.search(re_vacancy_id, string).group(1)
 
+re_html_tag_remove = r'<[^>]+>'
+# re.sub(re_html_tag_remove, replace, string)
+
 class Rabota1000_parser_async:
     #* Функция инициализации
     def __init__(self, city='russia') -> None:
         self.max_page_count = 10
         self.basic_url = f'https://rabota1000.ru/{city}/'
+        self.df = pd.DataFrame(columns=['vac_link', 'name', 'city', 
+                                        'company', 'experience', 
+                                        'schedule', 'employment', 
+                                        'skills', 'description', 
+                                        'salary', 'time'])
         
-        #! Чтение название вакансий из файла
-        self.vac_name_list = [
+        # self.vac_name_list = self.get_vac_name_list_into_csv()
+        self.vac_name_list =  [
             'data+scientist', 'data+science', 'дата+сайентист',
             'младший+дата+сайентист', 'стажер+дата+сайентист',
             'machine+learning', 'ml', 'ml+engineer',
@@ -53,6 +69,25 @@ class Rabota1000_parser_async:
             'junior+data+engineer', 'data+analyst',
             'data+analytics','аналитик+данных', 'big+data+junior'
         ]
+
+    #TODO ПЕРЕДЕЛАТЬ Чтение название вакансий ИЗ ФАЙЛА
+    def get_vac_name_list_into_csv():
+        pass
+
+    def to_pars(self)->None:
+        for vac_name in self.vac_name_list:
+            print(vac_name)
+            links = self.get_list_links_into_rabota1000(vac_name)
+            print('links ok')
+            pre_pars_dict = self.async_pars_url_list(links)
+            print('pre_pars_dict')
+            bar = progressbar.ProgressBar(maxval=len(pre_pars_dict)).start()
+            k = 0
+            for item in pre_pars_dict:
+                self.fetch_data_into_url(item)
+                k += 1
+                bar.update(k)
+
 
     #* Достает id вакансии и название сайта для дальнейшей обработки 
     def get_vac_id_into_url(self, url:str)->dict[str, str]:
@@ -66,7 +101,7 @@ class Rabota1000_parser_async:
             return {'source': 'rabota', 'vac_id':re.search(re_vacancy_id_rabota, url).group(1)}
 
     #& Вспомогательная функция для объединения списков
-    def list_simple_merge(list1, list2):
+    def list_simple_merge(self, list1:list, list2:list)->list:
         i, j = 0, 0
         res = []
         while i < len(list1) and j < len(list2):
@@ -78,40 +113,192 @@ class Rabota1000_parser_async:
         res += list2[j:] 
         return res
 
-
-    async def fetch_vacancy_data(self, session, rabota_url, ua)->dict:
+    #* Асинхронная функция запросов на редирект
+    #* принимает aiohttp.ClientSession(), ссылку с rabota1000, FakeUserAgent().random
+    #* возвращает в результате dict[source, vac_id]
+    async def fetch_vacancy_redirect_url(self, session, rabota_url, ua)->dict:
         try:
             url = f"{rabota_url}"
+            print(url)
             data = await session.get(url, headers = {'user-agent':ua, 'Authorization': f'Bearer {access_token}'})
             url = data.url
-
+            print(url)
             return self.get_vac_id_into_url(str(url))
 
         except Exception as e:
-            url = data.url
-            return self.get_vac_id_into_url(str(url))
+            print(e)
+            # url = data.url
+            # return self.get_vac_id_into_url(str(url))
+            return {'source':'', 'vac_id':''}
 
-    async def main(self, links):
+    #* Асинхронная функция принимает список ссылок, возвращает список из dict[source, vac_id]
+    async def async_pars_url_list_main(self, links)->list[dict]:
         tasks = []
         
         async with aiohttp.ClientSession() as session:
             ua = FakeUserAgent()
             for vacancy_id in links:
-                task = asyncio.create_task(self.fetch_vacancy_data(session, vacancy_id, ua.random))
+                task = asyncio.create_task(self.fetch_vacancy_redirect_url(session, vacancy_id, ua.random))
                 tasks.append(task)
             
             return [await asyncio.gather(*tasks)]
 
-    
-
+    #* Запускает tasks с задачей fetch_vacancy_redirect_url, разделяя полный список ссылок на кластеры по step штук
+    #* Возвращает единый список из dict[source, vac_id]
     def async_pars_url_list(self, links:list)->list[dict]:
         res = []
         step = 20
+        print(len(links))
         for i in range(0, len(links), step):
-            res += asyncio.run(self.main(links[i:i+step]))
+            print(i, end=' ')
+            res += asyncio.run(self.async_pars_url_list_main(links[i:i+step]))
 
+        print()
         merge = []
         for item in res:
             merge = self.list_simple_merge(merge, item)
 
+        return merge
 
+    #* Парсит все ссылки на вакансии без редиректа по названию вакансий, на max_page_count страниц выдачи
+    def get_list_links_into_rabota1000(self, vac_name)->list[str]:
+        res = []
+        for page_num in range(1, self.max_page_count+1):
+            used_url = f'{self.basic_url}{vac_name}?p={page_num}'
+            page = requests.get(used_url)
+            soup = BeautifulSoup(page.text, 'html.parser')
+
+            links = [link['href'] for link in soup.findAll('a', attrs={'@click':'vacancyLinkClickHandler'})]
+
+            res = self.list_simple_merge(res, links)
+
+        return res
+
+    #* Получаем все данные из dict[source, vac_id] и записываем их в датафрейм
+    def fetch_data_into_url(self, link_dict:dict[str, str]):
+        if link_dict['source'] != '':
+            if link_dict['source'] == 'hh.ru':
+                self.df = self.df.append(pd.DataFrame(self._pars_url_hh(link_dict['vac_id'])), ignore_index=True)
+            elif link_dict['source'] == 'zarplata.ru':
+                self.df = self.df.append(pd.DataFrame(self._pars_url_zarplata(link_dict['vac_id'])), ignore_index=True)
+            elif link_dict['source'] == 'finder.vc':
+                self.df = self.df.append(pd.DataFrame(self._pars_url_finder(link_dict['vac_id'])), ignore_index=True)
+            else:
+                self.df = self.df.append(pd.DataFrame(self._pars_url_other(link_dict['vac_id'])), ignore_index=True)
+
+    #& Парсинг HH.RU            (use API)    
+    def _pars_url_hh(self, id:str)->dict:
+        res = {}
+        try:
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            res['vac_link'] = f'https://hh.ru/vacancy/{id}'                             # Ссылка
+            res['name'] = data['name']                                                  # Название
+            res['city'] = data['area']['name']                                          # Город
+            res['company'] = data['employer']['name']                                   # Назвнание компании публикующей вакансию
+            res['experience'] = data['experience']['name']                              # Опыт работы (нет замены на jun mid и sin)
+            res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
+            res['employment'] = data['employment']['name']                              # График работы
+            res['skills'] = [item['name'] for item in data['key_skills']]               # Ключевые навыки
+            res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание (html теги не убраны)
+            if data['salary'] == None: 
+                res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
+            else:
+                res['salary'] = data['salary']                                          # Если есть то берем как есть
+            res['time'] = data['published_at']                                          # Дата и время публикации
+        except Exception as e:
+            print(f'Not Found {e}')
+            print(f'https://api.hh.ru/vacancies/{id}')
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            print(data)
+
+        return res
+
+    #& Парсинг ZARPLATA.RU      (use API)
+    def _pars_url_zarplata(self, id:str)->dict:
+        res = {}
+        try:
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            res['vac_link'] = f'https://www.zarplata.ru/vacancy/card/id{id}'            # Ссылка
+            res['name'] = data['name']                                                  # Название
+            res['city'] = data['area']['name']                                          # Город
+            res['company'] = data['employer']['name']                                   # Назвнание компании публикующей вакансию
+            res['experience'] = data['experience']['name']                              # Опыт работы (нет замены на jun mid и sin)
+            res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
+            res['employment'] = data['employment']['name']                              # График работы
+            res['skills'] = [item['name'] for item in data['key_skills']]               # Ключевые навыки
+            res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание
+            if data['salary'] == None: 
+                res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
+            else:
+                res['salary'] = data['salary']                                          # Если есть то берем как есть
+            res['time'] = data['published_at']
+            
+        except Exception as e:
+            print(f'Not Found {e}')
+            print(f'https://api.zarplata.ru/vacancies/{id}')
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            print(data)
+
+        return res
+
+    #& Парсинг RABOTA1000.RU    (use xpath)
+    def _pars_url_other(self, id:str)->dict:
+        res = {}
+        soup = BeautifulSoup(requests.get(f'https://rabota1000.ru/vacancy/{id}').text, 'html.parser')
+        dom = lxml.etree.HTML(str(soup)) 
+        res['vac_link'] = f'https://rabota1000.ru/vacancy/{id}'                                                                                             # Ссылка
+        res['name'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[1]/h2')[0].text.replace('\n', '').lstrip().rstrip()            # Название
+        res['city'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[3]/p[2]/span')[0].text                                         # Город (НЕТ)
+        res['company'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[3]/p[1]')[0].text.replace('\n', '').lstrip().rstrip()       # Назвнание компании публикующей вакансию
+        res['experience'] = ''                                                                                                                              # Опыт работы (нет замены на jun mid и sin)
+        res['schedule'] = ''                                                                                                                                # Тип работы (офис/удаленка и тд) (НЕТ)
+        res['employment'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[3]/ul/li[2]/span')[0].text                                      # График работы
+        res['skills'] = ''                                                                                                                                  # Ключевые навыки
+        res['description'] = re.sub(re_html_tag_remove, '', dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[4]')[0].text)                                                   # Полное описание (НЕТ)
+        if len(dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[2]/span'))>0:
+            res['salary'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[2]/span')[0].text.replace('\n', '').lstrip().rstrip()        # ЗП
+        else:
+            res['salary'] = 'Договорная'
+        res['time'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[3]/ul/li[1]/span')[0].text.replace('\n', '').lstrip().rstrip()        # Дата публикации
+
+        return res
+
+    #& Парсинг FINDER.VC        (use xpath)
+    def _pars_url_finder(self, id:str)->list:
+        res = {}
+        soup = BeautifulSoup(requests.get(f'https://finder.vc/vacancies/{id}').text, 'html.parser')
+        dom = lxml.etree.HTML(str(soup)) 
+        res['vac_link'] = f'https://finder.vc/vacancies/{id}' # Ссылка
+        res['name'] = soup.find('h1', attrs={'class':'vacancy-info-header__title'}).text # Название
+        res['city'] = ''              # Город (НЕТ)
+        res['company'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[1]/div[2]/div/div[1]/a')[0].text        # Назвнание компании публикующей вакансию
+        res['experience'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[3]/div[1]/div[2]/div')[0].text  # Опыт работы (нет замены на jun mid и sin)
+        res['schedule'] = ''     # Тип работы (офис/удаленка и тд) (НЕТ
+        res['employment'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[3]/div/div[2]/a')[0].text # График работы
+        res['skills'] = [li.text for li in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[3]/div[1]/div[2]/div[1]/ul')[0]]           # Ключевые навыки
+        res['description'] = ''    # Полное описание (НЕТ)
+        res['salary'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[2]/div[2]/div')[0].text.replace(u'\xa0', '')
+
+        if 'сегодня' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
+            res['time'] = str(date.today())
+        elif 'вчера' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
+            res['time'] = str(date.today() - timedelta(days=1))
+        else:
+            res['time'] = str(date.today() - timedelta(days=int(re.search(r'Опубликована (\d+)', dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text).group(1))))
+
+        return res
+
+
+
+
+
+
+
+
+
+
+
+
+parser = Rabota1000_parser_async()
+parser.to_pars()
+pd.display(parser.df)
