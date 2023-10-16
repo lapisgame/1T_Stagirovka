@@ -54,22 +54,14 @@ class Rabota1000_parser_async:
                                         'schedule', 'employment', 
                                         'skills', 'description', 
                                         'salary', 'time'])
-        
-        # self.vac_name_list = self.get_vac_name_list_into_csv()
-        self.vac_name_list =  [
-            'data+scientist', 'data+science', 'дата+сайентист',
-            'младший+дата+сайентист', 'стажер+дата+сайентист',
-            'machine+learning', 'ml', 'ml+engineer',
-            'инженер+машинного+обучения', 'data+engineering',
-            'инженер+данных', 'младший+инженер+данных',
-            'junior+data+analyst', 'junior+data+scientist',
-            'junior+data+engineer', 'data+analyst',
-            'data+analytics','аналитик+данных', 'big+data+junior'
-        ]
+        self.vac_name_list = []
+        self.get_vac_name_list_into_csv()
 
     #TODO ПЕРЕДЕЛАТЬ Чтение название вакансий ИЗ ФАЙЛА
-    def get_vac_name_list_into_csv():
-        pass
+    def get_vac_name_list_into_csv(self):
+        with open('vac_name_list.csv', encoding='utf-8') as f:
+            for line in f:
+                self.vac_name_list.append(line)
 
     def to_pars(self)->None:
         for vac_name in self.vac_name_list:
@@ -85,7 +77,7 @@ class Rabota1000_parser_async:
                 bar.update(k)
 
             self.df = self.df.drop_duplicates()
-            self.df.to_csv('test.csv', index=False)
+            self.df.to_csv('async_pars.csv', index=False)
 
 
     #* Достает id вакансии и название сайта для дальнейшей обработки 
