@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 
 import re
+import json
 
 import requests
 from bs4 import BeautifulSoup
@@ -30,8 +31,8 @@ params = {
     'client_secret':config['hh_api_Client_Secret']
 }
 
-access_token = 'APPLKVNBURD1P25TR20J9MAE1P445D8E94TV0J9PCC1P1F8EVQMPS0Q7JETVOJ5M'
-# access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
+# access_token = 'APPLKVNBURD1P25TR20J9MAE1P445D8E94TV0J9PCC1P1F8EVQMPS0Q7JETVOJ5M'
+access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
 print(access_token)
 
 # Основные регулярные выражения для проекта

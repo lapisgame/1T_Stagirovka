@@ -1,12 +1,11 @@
 psycopg2
 aiohttp
 asyncio
-re
 requests
 beautifulsoup4
 lxml
 progressbar
-dotenv
+python-dotenv
 fake_useragent
 datetime
 pandas
