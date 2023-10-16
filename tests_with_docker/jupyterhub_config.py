@@ -7,7 +7,7 @@ c.JupyterHub.authenticator_class = NativeAuthenticator
 
 c.GenericOAuthenticator.enable_auth_state = True
 c.Spawner.http_timeout = 300
-c.Spawner.enviroment = {'LANG':'ru_RU.utf8'}
+c.Spawner.start_timeout = 300
 c.JupyterHub.log_level = 'DEBUG'
 c.JupyterHub.hub_ip = '0.0.0.0'
 
