@@ -75,7 +75,8 @@ class Rabota1000_parser_async:
                 self.fetch_data_into_url(item)
                 k += 1
                 bar.update(k)
-
+            
+            print()
             self.df = self.df.drop_duplicates()
             self.df.to_csv('async_pars.csv', index=False)
 
