@@ -31,7 +31,7 @@ params = {
     'client_secret':config['hh_api_Client_Secret']
 }
 
-# access_token = 'APPLKVNBURD1P25TR20J9MAE1P445D8E94TV0J9PCC1P1F8EVQMPS0Q7JETVOJ5M'
+# access_token = 'APPLS6FG2UPMNOP7OV8UU27EJSASSCO27LRB244IO02DKDI7AQHI8FNH57JGCNAE'
 access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
 print(access_token)
 
@@ -189,7 +189,7 @@ class Rabota1000_parser_async:
                 res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
                 res['employment'] = data['employment']['name']                              # График работы
                 res['skills'] = '  '.join([item['name'] for item in data['key_skills']])    # Ключевые навыки
-                res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание (html теги не убраны)
+                res['description'] = re.sub(re_html_tag_remove, '', data['description']).replace(';', '')    # Полное описание (html теги не убраны)
                 if data['salary'] == None: 
                     res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
                 else:
@@ -230,7 +230,7 @@ class Rabota1000_parser_async:
             res['schedule'] = data['schedule']['name']                                  # Тип работы (офис/удаленка и тд)
             res['employment'] = data['employment']['name']                              # График работы
             res['skills'] = '  '.join([item['name'] for item in data['key_skills']])    # Ключевые навыки
-            res['description'] = re.sub(re_html_tag_remove, '', data['description'])    # Полное описание
+            res['description'] = re.sub(re_html_tag_remove, '', data['description']).replace(';', '')    # Полное описание
             if data['salary'] == None: 
                 res['salary'] = 'Договорная'                                            # Если ЗП не указано то пишем договорная
             else:
