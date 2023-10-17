@@ -27,7 +27,18 @@ services:
       interval: 5s
       retries: 5
     restart: always
-
+  airflow:
+    image: apache/airflow:latest
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "10203:8080"
+    networks:
+      - jupyterhub
 volumes:
   jupyterhub_data:
 
