@@ -79,7 +79,7 @@ class Rabota1000_parser_async:
             
             print()
             self.df = self.df.drop_duplicates()
-            self.df.to_csv('async_pars.csv', index=False)
+            self.df.to_csv('async_pars.csv', index=False, sep=';')
 
 
     #* Достает id вакансии и название сайта для дальнейшей обработки 
