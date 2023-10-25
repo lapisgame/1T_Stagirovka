@@ -68,10 +68,11 @@ class Rabota1000_parser_async:
         for row in soup.find("table").find_all("tr")[1:]:
             tds = row.find_all("td")
             try:
-                ip = tds[0].text.strip()
-                port = tds[1].text.strip()
-                host = f"{ip}:{port}"
-                proxies.append(host)
+                if tds[6].text == 'yes':
+                    ip = tds[0].text.strip()
+                    port = tds[1].text.strip()
+                    host = f"{ip}:{port}"
+                    proxies.append(host)
             except IndexError:
                 continue
         return proxies
@@ -131,7 +132,7 @@ class Rabota1000_parser_async:
         try:
             proxy = random.choice(self.proxies)
             url = f"{rabota_url}"
-            data = await session.get(url, proxy={"http": proxy, "https": proxy}, headers={'user-agent':ua, 'Authorization':f'Bearer {access_token}'}, timeout=5)
+            data = await session.get(url, headers={'user-agent':ua, 'Authorization':f'Bearer {access_token}'}, timeout=5)
             url = data.url
             return self.get_vac_id_into_url(str(url))
 
@@ -172,8 +173,7 @@ class Rabota1000_parser_async:
         res = []
         for page_num in range(1, self.max_page_count+1):
             used_url = f'{self.basic_url}{vac_name}?p={page_num}'
-            proxy = random.choice(self.proxies)
-            page = requests.get(used_url, proxies={"http": proxy, "https": proxy})
+            page = requests.get(used_url)
             soup = BeautifulSoup(page.text, 'html.parser')
 
             links = [link['href'] for link in soup.findAll('a', attrs={'@click':'vacancyLinkClickHandler'})]
@@ -200,7 +200,7 @@ class Rabota1000_parser_async:
         res = {}
         proxy = random.choice(self.proxies)
         try:
-            data = requests.get(f'https://api.hh.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}, headers = {'Authorization': f'Bearer {access_token}'}).json()
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
             if data['description'] != 'Not Found':
                 res['vac_link'] = f'https://hh.ru/vacancy/{id}'                             # Ссылка
                 res['name'] = data['name']                                                  # Название
@@ -233,7 +233,7 @@ class Rabota1000_parser_async:
         except Exception as e:
             print(f'Not Found {e}')
             print(f'https://api.hh.ru/vacancies/{id}')
-            data = requests.get(f'https://api.hh.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}, headers = {'Authorization': f'Bearer {access_token}'}).json()
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
             print(data)
 
         return res
@@ -243,7 +243,7 @@ class Rabota1000_parser_async:
         res = {}
         proxy = random.choice(self.proxies)
         try:
-            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}).json()
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
             res['vac_link'] = f'https://www.zarplata.ru/vacancy/card/id{id}'            # Ссылка
             res['name'] = data['name']                                                  # Название
             res['city'] = data['area']['name']                                          # Город
@@ -275,7 +275,7 @@ class Rabota1000_parser_async:
         except Exception as e:
             print(f'Not Found {e}')
             print(f'https://api.zarplata.ru/vacancies/{id}')
-            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}).json()
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
             print(data)
 
         return res
@@ -285,7 +285,7 @@ class Rabota1000_parser_async:
         res = {}
         proxy = random.choice(self.proxies)
         try:
-            soup = BeautifulSoup(requests.get(f'https://rabota1000.ru/vacancy/{id}', proxies={"http": proxy, "https": proxy}).text, 'html.parser')
+            soup = BeautifulSoup(requests.get(f'https://rabota1000.ru/vacancy/{id}').text, 'html.parser')
             dom = lxml.etree.HTML(str(soup)) 
             res['vac_link'] = f'https://rabota1000.ru/vacancy/{id}'                                                                                             # Ссылка
             res['name'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[1]/h2')[0].text.replace('\n', '').lstrip().rstrip()            # Название
@@ -310,7 +310,7 @@ class Rabota1000_parser_async:
         res = {}
         proxy = random.choice(self.proxies)
         try:
-            soup = BeautifulSoup(requests.get(f'https://finder.vc/vacancies/{id}', proxies={"http": proxy, "https": proxy}).text, 'html.parser')
+            soup = BeautifulSoup(requests.get(f'https://finder.vc/vacancies/{id}').text, 'html.parser')
             dom = lxml.etree.HTML(str(soup)) 
             res['vac_link'] = f'https://finder.vc/vacancies/{id}' # Ссылка
             res['name'] = soup.find('h1', attrs={'class':'vacancy-info-header__title'}).text # Название
