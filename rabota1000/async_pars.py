@@ -58,14 +58,14 @@ class Rabota1000_parser_async:
                                         'salary', 'time'])
         self.vac_name_list = []
         self.get_vac_name_list_into_csv()
-        self.free_proxies = self.get_free_proxies()
+        self.proxies = self.get_free_proxies()
 
     def get_free_proxies(self):
         url = "https://free-proxy-list.net/"
         # получаем ответ HTTP и создаем объект soup
         soup = BeautifulSoup(requests.get(url).content, "html.parser")
         proxies = []
-        for row in soup.find("table", attrs={"id": "proxylisttable"}).find_all("tr")[1:]:
+        for row in soup.find("table").find_all("tr")[1:]:
             tds = row.find_all("td")
             try:
                 ip = tds[0].text.strip()
