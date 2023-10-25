@@ -1,3 +1,4 @@
+import random
 import aiohttp
 import asyncio
 
@@ -57,8 +58,25 @@ class Rabota1000_parser_async:
                                         'salary', 'time'])
         self.vac_name_list = []
         self.get_vac_name_list_into_csv()
+        self.free_proxies = self.get_free_proxies()
 
-    #TODO ПЕРЕДЕЛАТЬ Чтение название вакансий ИЗ ФАЙЛА
+    def get_free_proxies(self):
+        url = "https://free-proxy-list.net/"
+        # получаем ответ HTTP и создаем объект soup
+        soup = BeautifulSoup(requests.get(url).content, "html.parser")
+        proxies = []
+        for row in soup.find("table", attrs={"id": "proxylisttable"}).find_all("tr")[1:]:
+            tds = row.find_all("td")
+            try:
+                ip = tds[0].text.strip()
+                port = tds[1].text.strip()
+                host = f"{ip}:{port}"
+                proxies.append(host)
+            except IndexError:
+                continue
+        return proxies
+    
+
     def get_vac_name_list_into_csv(self):
         with open('vac_name_list.csv', encoding='utf-8') as f:
             for line in f:
@@ -111,8 +129,9 @@ class Rabota1000_parser_async:
     #* возвращает в результате dict[source, vac_id]
     async def fetch_vacancy_redirect_url(self, session, rabota_url, ua)->dict:
         try:
+            proxy = random.choice(self.proxies)
             url = f"{rabota_url}"
-            data = await session.get(url, headers={'user-agent':ua, 'Authorization':f'Bearer {access_token}'}, timeout=5)
+            data = await session.get(url, proxy={"http": proxy, "https": proxy}, headers={'user-agent':ua, 'Authorization':f'Bearer {access_token}'}, timeout=5)
             url = data.url
             return self.get_vac_id_into_url(str(url))
 
@@ -153,7 +172,8 @@ class Rabota1000_parser_async:
         res = []
         for page_num in range(1, self.max_page_count+1):
             used_url = f'{self.basic_url}{vac_name}?p={page_num}'
-            page = requests.get(used_url)
+            proxy = random.choice(self.proxies)
+            page = requests.get(used_url, proxies={"http": proxy, "https": proxy})
             soup = BeautifulSoup(page.text, 'html.parser')
 
             links = [link['href'] for link in soup.findAll('a', attrs={'@click':'vacancyLinkClickHandler'})]
@@ -178,8 +198,9 @@ class Rabota1000_parser_async:
     #& Парсинг HH.RU            (use API)    
     def _pars_url_hh(self, id:str)->dict:
         res = {}
+        proxy = random.choice(self.proxies)
         try:
-            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}, headers = {'Authorization': f'Bearer {access_token}'}).json()
             if data['description'] != 'Not Found':
                 res['vac_link'] = f'https://hh.ru/vacancy/{id}'                             # Ссылка
                 res['name'] = data['name']                                                  # Название
@@ -212,7 +233,7 @@ class Rabota1000_parser_async:
         except Exception as e:
             print(f'Not Found {e}')
             print(f'https://api.hh.ru/vacancies/{id}')
-            data = requests.get(f'https://api.hh.ru/vacancies/{id}', headers = {'Authorization': f'Bearer {access_token}'}).json()
+            data = requests.get(f'https://api.hh.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}, headers = {'Authorization': f'Bearer {access_token}'}).json()
             print(data)
 
         return res
@@ -220,8 +241,9 @@ class Rabota1000_parser_async:
     #& Парсинг ZARPLATA.RU      (use API)
     def _pars_url_zarplata(self, id:str)->dict:
         res = {}
+        proxy = random.choice(self.proxies)
         try:
-            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}).json()
             res['vac_link'] = f'https://www.zarplata.ru/vacancy/card/id{id}'            # Ссылка
             res['name'] = data['name']                                                  # Название
             res['city'] = data['area']['name']                                          # Город
@@ -253,7 +275,7 @@ class Rabota1000_parser_async:
         except Exception as e:
             print(f'Not Found {e}')
             print(f'https://api.zarplata.ru/vacancies/{id}')
-            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}').json()
+            data = requests.get(f'https://api.zarplata.ru/vacancies/{id}', proxies={"http": proxy, "https": proxy}).json()
             print(data)
 
         return res
@@ -261,8 +283,9 @@ class Rabota1000_parser_async:
     #& Парсинг RABOTA1000.RU    (use xpath)
     def _pars_url_other(self, id:str)->dict:
         res = {}
+        proxy = random.choice(self.proxies)
         try:
-            soup = BeautifulSoup(requests.get(f'https://rabota1000.ru/vacancy/{id}').text, 'html.parser')
+            soup = BeautifulSoup(requests.get(f'https://rabota1000.ru/vacancy/{id}', proxies={"http": proxy, "https": proxy}).text, 'html.parser')
             dom = lxml.etree.HTML(str(soup)) 
             res['vac_link'] = f'https://rabota1000.ru/vacancy/{id}'                                                                                             # Ссылка
             res['name'] = dom.xpath('/html/body/div[1]/main/div[2]/div/div/div[2]/section[1]/div[1]/h2')[0].text.replace('\n', '').lstrip().rstrip()            # Название
@@ -285,25 +308,29 @@ class Rabota1000_parser_async:
     #& Парсинг FINDER.VC        (use xpath)
     def _pars_url_finder(self, id:str)->list:
         res = {}
-        soup = BeautifulSoup(requests.get(f'https://finder.vc/vacancies/{id}').text, 'html.parser')
-        dom = lxml.etree.HTML(str(soup)) 
-        res['vac_link'] = f'https://finder.vc/vacancies/{id}' # Ссылка
-        res['name'] = soup.find('h1', attrs={'class':'vacancy-info-header__title'}).text # Название
-        res['city'] = ''              # Город (НЕТ)
-        res['company'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[1]/div[2]/div/div[1]/a')[0].text.replace('\n', '')        # Назвнание компании публикующей вакансию
-        res['experience'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[3]/div[1]/div[2]/div')[0].text.replace('\n', '')  # Опыт работы (нет замены на jun mid и sin)
-        res['schedule'] = ''     # Тип работы (офис/удаленка и тд) (НЕТ
-        res['employment'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[3]/div/div[2]/a')[0].text.replace('\n', '') # График работы
-        res['skills'] = [li.text.replace('\n', '') for li in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[3]/div[1]/div[2]/div[1]/ul')[0]]           # Ключевые навыки
-        res['description'] = ''    # Полное описание (НЕТ)
-        res['salary'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[2]/div[2]/div')[0].text.replace(u'\xa0', '').replace('\n', '')
+        proxy = random.choice(self.proxies)
+        try:
+            soup = BeautifulSoup(requests.get(f'https://finder.vc/vacancies/{id}', proxies={"http": proxy, "https": proxy}).text, 'html.parser')
+            dom = lxml.etree.HTML(str(soup)) 
+            res['vac_link'] = f'https://finder.vc/vacancies/{id}' # Ссылка
+            res['name'] = soup.find('h1', attrs={'class':'vacancy-info-header__title'}).text # Название
+            res['city'] = ''              # Город (НЕТ)
+            res['company'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[1]/div[2]/div/div[1]/a')[0].text.replace('\n', '')        # Назвнание компании публикующей вакансию
+            res['experience'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[3]/div[1]/div[2]/div')[0].text.replace('\n', '')  # Опыт работы (нет замены на jun mid и sin)
+            res['schedule'] = ''     # Тип работы (офис/удаленка и тд) (НЕТ
+            res['employment'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[3]/div/div[2]/a')[0].text.replace('\n', '') # График работы
+            res['skills'] = [li.text.replace('\n', '') for li in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[3]/div[1]/div[2]/div[1]/ul')[0]]           # Ключевые навыки
+            res['description'] = ''    # Полное описание (НЕТ)
+            res['salary'] = dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[2]/div[2]/div[2]/div')[0].text.replace(u'\xa0', '').replace('\n', '')
 
-        if 'сегодня' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
-            res['time'] = str(date.today())
-        elif 'вчера' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
-            res['time'] = str(date.today() - timedelta(days=1))
-        else:
-            res['time'] = str(date.today() - timedelta(days=int(re.search(r'Опубликована (\d+)', dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text).group(1))))
+            if 'сегодня' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
+                res['time'] = str(date.today())
+            elif 'вчера' in dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text:
+                res['time'] = str(date.today() - timedelta(days=1))
+            else:
+                res['time'] = str(date.today() - timedelta(days=int(re.search(r'Опубликована (\d+)', dom.xpath('/html/body/div[1]/div[2]/div/main/div/div/div[2]/div[1]/div/div/div[1]/div/div[1]')[0].text).group(1))))
+        except Exception as e:
+            print(f'https://rabota1000.ru/vacancy/{id}')
 
         return res
 
