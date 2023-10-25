@@ -31,8 +31,8 @@ params = {
     'client_secret':config['hh_api_Client_Secret']
 }
 
-# access_token = 'APPLS6FG2UPMNOP7OV8UU27EJSASSCO27LRB244IO02DKDI7AQHI8FNH57JGCNAE'
-access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
+access_token = 'APPLRO5K4638656L3VPEES0IS0L242C1I065V7TQ8NNGAOS7ASC8ANEP5G8EPV14'
+# access_token = json.loads(requests.post(f'https://hh.ru/oauth/token', params=params).content.decode())['access_token']
 print(access_token)
 
 # Основные регулярные выражения для проекта
