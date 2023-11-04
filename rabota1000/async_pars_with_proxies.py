@@ -58,7 +58,8 @@ class Rabota1000_parser_async:
                                         'salary', 'time'])
         self.vac_name_list = []
         self.get_vac_name_list_into_csv()
-        self.proxies = self.get_free_proxies()
+        # self.proxies = self.get_free_proxies()
+        self.proxies = ['213.183.56.99:80', '81.23.193.94:32650', '194.1.232.150:33333', '79.143.225.152:31270']
 
     def get_free_proxies(self):
         url = "https://free-proxy-list.net/"
